@@ -1,0 +1,43 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: endoscope-gateway
+  namespace: k8s-endoscope
+spec:
+  selector:
+    istio: ingressgateway  # use Istio ingress gateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"  # replace with your domain or use wildcard "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: endoscope-virtualservice
+  namespace: k8s-endoscope
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - endoscope-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /ws
+    route:
+    - destination:
+        host: hub-service.k8s-endoscope.svc.cluster.local
+        port:
+          number: 8085
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: frontend-service.k8s-endoscope.svc.cluster.local
+        port:
+          number: 80

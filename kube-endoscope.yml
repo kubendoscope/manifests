@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: hub
+    namespace: k8s-endoscope
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hub
+  template:
+    metadata:
+      labels:
+        app: hub
+    spec:
+      containers:
+      - name: hub
+        image: ahmedrafay888/hub
+        command: [ "./hub" ]
+        args:
+          - "-grpc_host=0.0.0.0"
+          - "-grpc_port=50051"
+          - "-ws_host=0.0.0.0"
+          - "-ws_port=8085"
+          # Uncomment and set below if you want to enable Kafka
+          - "-kafka_broker=192.168.100.21:9095"
+          - "-kafka_user=user1"
+          - "-kafka_password=91Al7fEL7j"
+          - "-kafka_topic=gotls-events"
+        ports:
+        - name: grpc
+          containerPort: 50051
+        - name: websocket
+          containerPort: 8085
+        resources:
+          requests:
+            memory: "20Mi"
+            cpu: "5m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hub-service
+  namespace: k8s-endoscope
+spec:
+  selector:
+    app: hub
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+    - name: websocket
+      port: 8085
+      targetPort: websocket
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: frontend
+    namespace: k8s-endoscope
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: frontend
+    template:
+        metadata:
+            labels:
+                app: frontend
+        spec:
+            containers:
+            - name: frontend
+              image: ahmedrafay888/frontend:latest
+              ports:
+                - name: web
+                  containerPort: 80
+              resources:
+                requests:
+                  memory: "20Mi"
+                  cpu: "5m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: k8s-endoscope
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: web
+      port: 80
+      targetPort: web
+  type: LoadBalancer
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: endoscope-gateway
+  namespace: k8s-endoscope
+spec:
+  selector:
+    istio: ingressgateway  # use Istio ingress gateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"  # replace with your domain or use wildcard "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: endoscope-virtualservice
+  namespace: k8s-endoscope
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - endoscope-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /ws
+    route:
+    - destination:
+        host: hub-service.k8s-endoscope.svc.cluster.local
+        port:
+          number: 8085
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: frontend-service.k8s-endoscope.svc.cluster.local
+        port:
+          number: 80
